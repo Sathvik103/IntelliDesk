@@ -13,7 +13,6 @@ interface AuthContextType {
   isLoading: boolean;
   login: (username: string, password: string) => Promise<void>;
   logout: () => void;
-  switchDemoRole: (username: string) => Promise<void>;
   setOrganization: (org: Organization) => void;
   refreshUser: () => Promise<void>;
 }
@@ -35,10 +34,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (savedToken) {
           setToken(savedToken);
           try {
+            // 1. Validate token by fetching user profile
             const profile = await apiAuth.getMe();
             setUser(profile);
             if (profile.organization_details) {
               setOrganization(profile.organization_details);
+            }
+
+            // 2. Only AFTER user is confirmed authenticated, load organizations
+            try {
+              const orgs = await apiOrganizations.list();
+              setAllOrganizations(orgs);
+            } catch (orgErr) {
+              console.warn('Failed to load organizations after authentication.', orgErr);
             }
           } catch (err) {
             console.warn('Session expired or offline. Clearing saved token.');
@@ -46,17 +54,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setToken(null);
           }
         }
-
-        // Load organizations
-        try {
-          const orgs = await apiOrganizations.list();
-          setAllOrganizations(orgs);
-          if (orgs.length > 0 && !organization) {
-            setOrganization(orgs[0]);
-          }
-        } catch (orgErr) {
-          console.warn('Failed to load organizations from backend.', orgErr);
-        }
+        // If no saved token, do NOT call authenticated endpoints
       } finally {
         setIsLoading(false);
       }
@@ -75,13 +73,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (data.user.organization_details) {
         setOrganization(data.user.organization_details);
       }
+      // Load all organizations for the org selector
+      try {
+        const orgs = await apiOrganizations.list();
+        setAllOrganizations(orgs);
+      } catch (orgErr) {
+        console.warn('Failed to load organizations after login.', orgErr);
+      }
     } finally {
       setIsLoading(false);
     }
-  };
-
-  const switchDemoRole = async (demoUsername: string) => {
-    await login(demoUsername, 'password123');
   };
 
   const logout = () => {
@@ -115,7 +116,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isLoading,
         login,
         logout,
-        switchDemoRole,
         setOrganization,
         refreshUser,
       }}

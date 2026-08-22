@@ -11,7 +11,6 @@ import {
   LogOut,
   LogIn,
   Layers,
-  Sparkles,
 } from 'lucide-react';
 
 interface NavbarProps {
@@ -21,89 +20,10 @@ interface NavbarProps {
 }
 
 export const Navbar: React.FC<NavbarProps> = ({ onOpenAuth, activeTab, setActiveTab }) => {
-  const { user, role, organization, allOrganizations, setOrganization, switchDemoRole, logout } = useAuth();
-  const [switching, setSwitching] = useState<string | null>(null);
-
-  const handleDemoSwitch = async (username: string) => {
-    setSwitching(username);
-    try {
-      await switchDemoRole(username);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setSwitching(null);
-    }
-  };
+  const { user, role, organization, allOrganizations, setOrganization, logout } = useAuth();
 
   return (
     <header className="bg-white border-bottom shadow-sm sticky-top">
-      {/* Top Demo Bar */}
-      <div className="bg-dark text-white py-1 px-3 border-bottom small">
-        <div className="container-fluid d-flex flex-wrap justify-content-between align-items-center gap-2">
-          <div className="d-flex align-items-center gap-2 text-light">
-            <Sparkles size={15} className="text-warning" />
-            <span className="fw-semibold">Role Quick Switcher:</span>
-            <span className="text-muted d-none d-md-inline">(Instant preview across all system roles)</span>
-          </div>
-
-          <div className="d-flex flex-wrap align-items-center gap-1">
-            <button
-              onClick={() => handleDemoSwitch('admin_greenwood')}
-              disabled={switching !== null}
-              className={`btn btn-sm py-0 px-2 rounded-pill ${
-                user?.username === 'admin_greenwood' ? 'btn-primary' : 'btn-outline-light'
-              }`}
-            >
-              <ShieldAlert size={13} className="me-1" />
-              Colony Admin
-            </button>
-
-            <button
-              onClick={() => handleDemoSwitch('emp_rajesh')}
-              disabled={switching !== null}
-              className={`btn btn-sm py-0 px-2 rounded-pill ${
-                user?.username === 'emp_rajesh' ? 'btn-warning text-dark' : 'btn-outline-light'
-              }`}
-            >
-              <ZapIcon size={13} className="me-1" />
-              Electrician (Rajesh)
-            </button>
-
-            <button
-              onClick={() => handleDemoSwitch('emp_suresh')}
-              disabled={switching !== null}
-              className={`btn btn-sm py-0 px-2 rounded-pill ${
-                user?.username === 'emp_suresh' ? 'btn-info text-dark' : 'btn-outline-light'
-              }`}
-            >
-              <Wrench size={13} className="me-1" />
-              Plumber (Suresh)
-            </button>
-
-            <button
-              onClick={() => handleDemoSwitch('resident_neha')}
-              disabled={switching !== null}
-              className={`btn btn-sm py-0 px-2 rounded-pill ${
-                user?.username === 'resident_neha' ? 'btn-success' : 'btn-outline-light'
-              }`}
-            >
-              <UserCheck size={13} className="me-1" />
-              Resident (Neha)
-            </button>
-
-            <button
-              onClick={() => handleDemoSwitch('superadmin')}
-              disabled={switching !== null}
-              className={`btn btn-sm py-0 px-2 rounded-pill ${
-                user?.username === 'superadmin' ? 'btn-danger' : 'btn-outline-light'
-              }`}
-            >
-              Super Admin
-            </button>
-          </div>
-        </div>
-      </div>
-
       {/* Main Navbar */}
       <div className="container-fluid px-3 py-2">
         <div className="d-flex align-items-center justify-content-between">
@@ -193,22 +113,3 @@ export const Navbar: React.FC<NavbarProps> = ({ onOpenAuth, activeTab, setActive
     </header>
   );
 };
-
-function ZapIcon({ size, className }: { size: number; className?: string }) {
-  return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      className={className}
-    >
-      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-    </svg>
-  );
-}

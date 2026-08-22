@@ -20,7 +20,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
   const [lastName, setLastName] = useState<string>('');
   const [phone, setPhone] = useState<string>('');
   const [selectedOrgId, setSelectedOrgId] = useState<string>(organization?.id || '');
-  const [role, setRole] = useState<'USER' | 'EMPLOYEE' | 'ADMIN'>('USER');
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -40,7 +39,6 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
           first_name: firstName,
           last_name: lastName,
           phone,
-          role,
           organization: selectedOrgId || (allOrganizations[0]?.id || null),
         });
         await login(username, password);
