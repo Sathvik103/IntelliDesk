@@ -1,0 +1,309 @@
+# Implementation Plan: Phase 3 — IntelliDesk Production Hardening
+
+## Overview
+
+Tasks are organized in dependency order. Backend hardening (Tasks 1–4) can run in parallel with the frontend foundation (Tasks 5–6). The three portal implementations (Tasks 7–9) depend on the foundation but are otherwise independent. Feedback wiring (Task 10) depends on Task 7. Analytics (Task 11) depends on Task 9. The test suite (Task 12) can be written incrementally alongside each backend task.
+
+Legend:
+- Tasks marked `*` are optional (tests, property checks) and can be skipped for a faster MVP.
+- Every task references the specific requirements it satisfies.
+
+---
+
+## Tasks
+
+- [ ] 1. Backend: Feedback endpoint wiring and validation
+  - [ ] 1.1 Verify `apps/feedback/urls.py` is registered in `config/urls.py` under `path('api/feedback/', ...)`; add if missing
+    - Confirm the existing `FeedbackViewSet` is fully reachable at `POST /api/feedback/`
+    - _Requirements: 12.1, 12.2_
+  - [ ] 1.2 Audit `FeedbackViewSet.create()` for the full business logic
+    - Verify `resolution_time_minutes` is calculated as `(completed_at or now - created_at).total_seconds() / 60`
+    - Verify `met_sla` is derived as `resolution_time_minutes <= domain.sla_hours * 60`
+    - Verify that `is_resolved=False` triggers `AssignmentService.reassign_request` and sets `status=REOPENED`
+    - Fix any gaps found; do not change method signatures or the Feedback model
+    - _Requirements: 12.3, 12.4_
+  - [ ] 1.3 Verify duplicate-feedback guard (OneToOne constraint + view-level 400 response)
+    - _Requirements: 12.5_
+  - [ ]* 1.4 Write unit tests in `apps/feedback/tests.py`
+    - Test rating persisted, resolution time calculated correctly, `met_sla` derived from `sla_hours`
+    - Test unresolved feedback triggers reassignment (mock `AssignmentService.reassign_request`)
+    - Test duplicate submission returns HTTP 400
+    - **Property 7: Feedback SLA calculation correctness** — for generated time pairs and sla_hours, assert `met_sla == (resolution_mins <= sla_limit)`
+    - **Validates: Requirements 12.3, 12.4, 12.5**
+    - _Requirements: 17.9_
+
+- [ ] 2. Backend: Analytics service completion
+  - [ ] 2.1 Extract `_employee_stats(emp)` helper from `AnalyticsService.get_charts_data` to eliminate duplication
+    - Refactor the employee loop in `get_charts_data` to use `prefetch_related('assignments__request__feedback')` on the queryset before iteration; remove per-employee N+1 queries
+    - _Requirements: Req 10 (DB optimization)_
+  - [ ] 2.2 Implement `AnalyticsService.get_employee_scorecard(emp)` using the extracted helper
+    - Returns the same structure as the per-employee dict in `workforce_performance`
+    - _Requirements: 6.5_
+  - [ ] 2.3 Complete `EmployeeScorecardView.get()` in `apps/analytics/views.py`
+    - For `pk=None`, look up the employee via `request.user.employee_profile`
+    - Apply org-scoped `get_object_or_404` so cross-tenant access returns 404
+    - Return scorecard dict from step 2.2
+    - _Requirements: 6.5, 2.1_
+  - [ ] 2.4 Verify `AnalyticsOverviewView` and `AnalyticsChartsView` are org-scoped correctly for non-superusers (they are; confirm and add a comment)
+    - _Requirements: 7.1, 7.2, 7.3_
+
+- [ ] 3. Backend: Permission and organization isolation hardening
+  - [ ] 3.1 Add a `test_org_isolation` test class in `apps/requests/tests_phase3.py`
+    - Create two organizations, two users in different orgs, confirm User A cannot GET/PATCH/DELETE User B's ServiceRequest
+    - **Property 2 & 3: Organization isolation** — list endpoint returns zero cross-tenant records; detail endpoint returns 403/404
+    - **Validates: Requirements 2.1, 2.2**
+    - _Requirements: 17.4_
+  - [ ] 3.2 Add authentication tests in `apps/accounts/tests_phase3.py`
+    - Test valid login returns access token, refresh token, and user profile with correct role
+    - Test invalid credentials return 400 (not 500)
+    - Test inactive user account returns 400
+    - **Property 1: Self-registration privilege escalation is impossible** — POST /auth/register/ with role=ADMIN returns 403; role=EMPLOYEE returns 403
+    - **Validates: Requirements 1.1, 1.2, 1.6**
+    - _Requirements: 17.2, 17.3_
+  - [ ] 3.3 Add ServiceRequest lifecycle tests in `apps/requests/tests_phase3.py`
+    - Test CREATED → ASSIGNED (via auto-assign) when eligible employees exist
+    - Test CREATED → QUEUED when no eligible employees exist
+    - Test ASSIGNED → IN_PROGRESS via `start_work`
+    - Test IN_PROGRESS → COMPLETED via `complete_work`
+    - Test COMPLETED + unresolved feedback → REOPENED
+    - Test any open status → CANCELLED via `cancel`
+    - **Property 4: Auto-assignment fires on every new valid request**
+    - **Validates: Requirements 3.5, 3.6, 3.7, 17.5, 17.6**
+    - _Requirements: 17.5, 17.6_
+  - [ ] 3.4 Add AssignmentEngine eligibility tests in `apps/ml_engine/tests_phase3.py`
+    - Test unavailable employee excluded from candidates
+    - Test wrong-org employee excluded
+    - Test at-capacity employee excluded
+    - Test domain-mismatch employee excluded
+    - Test closer + higher-proficiency employee scores higher than far + low-proficiency
+    - **Property 5: CandidateSelector hard-filter invariant**
+    - **Validates: Requirements 5.3, 17.7, 17.8**
+    - _Requirements: 17.7, 17.8_
+  - [ ] 3.5 Add ServiceDomain CRUD permission tests in `apps/services/tests.py`
+    - Test admin can create/update/delete domain in own org
+    - Test employee and resident receive 403 on create/update/delete
+    - **Validates: Requirements 11.1, 17.10**
+    - _Requirements: 17.10_
+
+- [ ] 4. Backend: Checkpoint
+  - Ensure all tests pass: `python manage.py test --noinput`
+  - Run `python manage.py check --database default`
+  - Run `python manage.py makemigrations --check`
+  - Ask the user if any questions arise before proceeding to frontend.
+
+- [ ] 5. Frontend: Design system foundation and AuthContext
+  - [ ] 5.1 Install and configure Tailwind CSS with the custom color tokens defined in the design document
+    - Update `tailwind.config.js` with primary, surface, border, text, status, and priority color palettes
+    - Update `app/globals.css` to use `@tailwind base/components/utilities`
+    - _Requirements: 13.2_
+  - [ ] 5.2 Implement UI primitive components in `components/ui/`
+    - `Button.tsx`: variants (primary, secondary, ghost, danger), sizes (sm, md, lg), loading spinner state
+    - `Badge.tsx`: accepts `variant` prop; maps `RequestStatusType` and `PriorityType` to status/priority colors
+    - `Card.tsx`: base card with optional `accent` border-left color
+    - `Input.tsx` and `Select.tsx`: accessible, Tailwind-styled form controls with error state
+    - `Modal.tsx`: accessible dialog with backdrop, close button, `aria-modal`
+    - `Skeleton.tsx`: pulsing gray placeholder blocks for content loading
+    - `EmptyState.tsx`: icon + heading + optional CTA button
+    - `ErrorState.tsx`: icon + message + optional retry button
+    - `Table.tsx`: thead/tbody with hover rows and sortable column headers
+    - _Requirements: 13.2, 13.4, 13.6, 13.7_
+  - [ ] 5.3 Implement `ToastContext.tsx` and `Toast.tsx`
+    - `ToastContext`: queue of `{id, message, type: 'success'|'error'|'info', duration}` items
+    - `Toast.tsx`: renders the active toast at bottom-right with auto-dismiss and manual close
+    - Export `useToast()` hook
+    - _Requirements: 13.5_
+  - [ ] 5.4 Implement `AuthContext.tsx`
+    - State: `{ user: UserProfile | null, isLoading: boolean, accessToken: string | null }`
+    - `login(username, password)`: calls `apiAuth.login`, stores tokens in localStorage, sets user state
+    - `logout()`: clears tokens, resets user state, redirects to `/login`
+    - On mount: reads token from localStorage, calls `apiAuth.getMe()` to hydrate user; handles 401 gracefully
+    - _Requirements: 1.1, 1.4, 1.5, 13.9_
+  - [ ] 5.5 Add JWT refresh interceptor to `lib/api.ts`
+    - Response interceptor: on 401 for non-login requests, attempt `POST /api/auth/token/refresh/` with stored refresh token
+    - On success: update stored access token, retry original request
+    - On failure: call logout + redirect
+    - _Requirements: 1.5_
+  - [ ] 5.6 Implement `app/layout.tsx` wrapping the entire app with `AuthProvider` and `ToastProvider`
+    - Implement `app/page.tsx` as a client redirect: if authenticated → role-based portal, else `/login`
+    - _Requirements: 1.3, 13.9_
+
+- [ ] 6. Frontend: Application shell layouts and login page
+  - [ ] 6.1 Implement `app/(auth)/login/page.tsx`
+    - Form: username + password inputs, submit button with loading state
+    - On success: redirect to role-appropriate portal root
+    - On error: display inline error message (no toast — show in form)
+    - Remove all role-switcher, dev-mode, and footer text
+    - _Requirements: 1.1, 1.2, 13.8_
+  - [ ] 6.2 Implement `components/layout/AdminSidebar.tsx`
+    - Nav items: Dashboard, Requests, Employees, Service Domains, Users
+    - Active route highlight, org name display, user avatar/name, logout button
+    - Collapsible on mobile
+    - _Requirements: 16.1, 13.3_
+  - [ ] 6.3 Implement `components/layout/EmployeeSidebar.tsx`
+    - Nav items: Dashboard, My Assignments, History
+    - Availability toggle with live state from `apiEmployees.toggleAvailability`
+    - _Requirements: 15.1, 13.3_
+  - [ ] 6.4 Implement `components/layout/ResidentNav.tsx`
+    - Top navigation: Logo, "My Requests", user name, logout
+    - _Requirements: 14.1, 13.3_
+  - [ ] 6.5 Implement route-guarded layouts
+    - `app/(admin)/layout.tsx`: role guard `ADMIN`; render `AdminSidebar` + content area
+    - `app/(employee)/layout.tsx`: role guard `EMPLOYEE`; render `EmployeeSidebar` + content area
+    - `app/(resident)/layout.tsx`: role guard `USER`; render `ResidentNav` + content area
+    - Guard logic: `useAuth()` → if `isLoading` show full-page skeleton; if no user redirect `/login`; if wrong role redirect `/login`
+    - _Requirements: 1.3, 1.7, 1.8, 13.9_
+
+- [ ] 7. Frontend: Resident portal
+  - [ ] 7.1 Implement `app/(resident)/page.tsx` — Resident home
+    - Fetch `apiRequests.list()` for the authenticated resident
+    - Show count of open requests in a summary card + "New Request" button
+    - List recent requests using `RequestCard` component
+    - Show `EmptyState` with "Submit your first request" CTA when list is empty
+    - Show `Skeleton` while loading; `ErrorState` on failure
+    - _Requirements: 14.1, 4.1, 13.4, 13.6, 13.7_
+  - [ ] 7.2 Implement `components/resident/RequestCard.tsx`
+    - Displays: domain name, issue title or custom description (truncated), `StatusBadge`, priority badge, relative timestamp
+    - Links to `/(resident)/requests/[id]`
+    - _Requirements: 4.1, 4.4_
+  - [ ] 7.3 Implement `components/resident/NewRequestWizard.tsx` — 4-step wizard
+    - Step 1: Fetch active domains (`GET /api/services/domains/?is_active=true`), render icon grid using `icon_name` mapped to Lucide icons
+    - Step 2: Fetch issues for selected domain (`GET /api/services/issues/?domain={id}&is_active=true`); show predefined issues + "Describe my own issue" option
+    - Step 3: Location name text input + optional coords; priority `<Select>` pre-filled from issue `default_priority`; allow override
+    - Step 4: Confirmation summary + "Submit" button
+    - On submit: `POST /api/requests/` → success toast + navigate to request list
+    - Show step progress indicator
+    - _Requirements: 3.1, 3.2, 3.3, 3.4, 14.2_
+  - [ ] 7.4 Implement `app/(resident)/requests/new/page.tsx`
+    - Renders `<NewRequestWizard />`
+    - _Requirements: 14.2_
+  - [ ] 7.5 Implement `app/(resident)/requests/[id]/page.tsx` — Request detail
+    - Fetch `apiRequests.getById(id)`
+    - Show full request details, status timeline, assigned employee card (name, role, distance, SLA info)
+    - If status `COMPLETED` and no feedback: show feedback prompt card with "Leave Feedback" button
+    - _Requirements: 4.2, 4.3, 4.4, 12.1_
+  - [ ] 7.6 Implement `components/resident/FeedbackModal.tsx`
+    - Resolved/Unresolved toggle (boolean)
+    - Star rating selector 1–5 (interactive stars)
+    - Optional comments textarea
+    - Submit → `POST /api/feedback/` → on success: update page state, show toast; on failure: show error
+    - _Requirements: 12.1, 12.2, 14.4, 14.5_
+
+- [ ] 8. Frontend: Employee portal
+  - [ ] 8.1 Implement `app/(employee)/page.tsx` — Employee dashboard
+    - Fetch `apiEmployees.getMe()` and `apiRequests.list()` (employee's assigned requests)
+    - Four metric cards: Active Jobs, Urgent/Critical, Completed Today, Availability status with toggle
+    - Show loading skeletons; show error state on failure
+    - _Requirements: 6.1, 15.1, 13.4_
+  - [ ] 8.2 Implement `app/(employee)/assignments/page.tsx` — Assignment queue
+    - Fetch employee's active requests: `GET /api/requests/?status=ASSIGNED,ACCEPTED,IN_PROGRESS`
+    - Sort by priority (CRITICAL first)
+    - Render `AssignmentCard` per request
+    - `EmptyState` when no active work
+    - _Requirements: 6.2, 15.2_
+  - [ ] 8.3 Implement `components/employee/AssignmentCard.tsx`
+    - Domain icon, issue title, priority badge, distance badge, location name
+    - `SlaCountdown` component (calculates remaining time from `assigned_at + sla_hours_snapshot * 3600 sec`)
+    - Action buttons: ASSIGNED → "Start Work" (calls `apiRequests.startWork(id)`), IN_PROGRESS → "Mark Complete" (calls `apiRequests.completeWork(id)`)
+    - Optimistic status update; revert on API error; toast notifications
+    - _Requirements: 6.2, 6.3, 6.4, 15.3_
+  - [ ] 8.4 Implement `components/employee/SlaCountdown.tsx`
+    - Accepts `deadline: Date`; uses `useEffect` + `setInterval` to tick every minute
+    - Renders `HH:MM remaining` with amber color < 4 hours, red < 1 hour, green otherwise
+    - _Requirements: 6.2, 15.2_
+  - [ ] 8.5 Implement `app/(employee)/assignments/[id]/page.tsx` — Assignment detail
+    - Full request information, requester details, location, priority, SLA, distance
+    - Action buttons (same as card but full-width)
+    - _Requirements: 6.2_
+  - [ ] 8.6 Implement `app/(employee)/history/page.tsx` — Assignment history
+    - Fetch `GET /api/assignments/?status=COMPLETED,CANCELLED` (employee-scoped)
+    - Table: request domain, issue, completed date, rating received, resolution time, SLA outcome badge
+    - Pagination
+    - _Requirements: 6.5, 15.4_
+
+- [ ] 9. Frontend: Admin portal — Dashboard and analytics
+  - [ ] 9.1 Implement `app/(admin)/page.tsx` — Admin operations dashboard
+    - Fetch `apiAnalytics.getOverview()` and `apiAnalytics.getCharts(14)`
+    - Render 8 KPI cards in a `grid-cols-2 md:grid-cols-4` layout
+    - Render 4 charts below: Requests by Domain, Daily Trend, By Priority, Satisfaction
+    - Render workforce performance table
+    - All data from real API; no mocks
+    - Skeleton loading for all sections
+    - _Requirements: 7.1, 7.2, 7.3, 7.4, 16.2, 16.3, 16.4_
+  - [ ] 9.2 Implement `components/admin/KpiCard.tsx`
+    - Props: `title`, `value`, `subtitle`, `icon`, `accentColor`
+    - Card with left accent border, large number, optional subtitle
+    - _Requirements: 7.1_
+  - [ ] 9.3 Implement chart components in `components/admin/charts/`
+    - `RequestsByDomainChart.tsx` — Recharts BarChart
+    - `DailyTrendChart.tsx` — Recharts LineChart (created + completed)
+    - `PriorityChart.tsx` — Recharts BarChart with priority colors
+    - `SatisfactionChart.tsx` — Recharts BarChart 1–5 stars
+    - All wrapped in `ResponsiveContainer`
+    - _Requirements: 7.3, 16.3_
+  - [ ] 9.4 Implement `app/(admin)/requests/page.tsx` — Request management
+    - Fetch `apiRequests.list()` with pagination and filter params
+    - Filter bar: domain selector, priority selector, status selector, search input
+    - `RequestsTable` with columns: ID, Requester, Domain, Priority, Status, Created, Actions
+    - Per-row actions dropdown: View, Re-trigger Assignment, Cancel, Inspect Candidates
+    - Pagination controls
+    - _Requirements: 8.1, 16.5_
+  - [ ] 9.5 Implement `app/(admin)/requests/[id]/page.tsx` — Request detail (admin view)
+    - Full request info, assignment history list, feedback if present
+    - "Inspect Candidates" button → `CandidateInspectorModal`
+    - "Re-trigger Assignment" button → `POST /api/requests/{id}/trigger_assignment/` + toast
+    - "Cancel Request" button → confirmation modal → `POST /api/requests/{id}/cancel/` + toast
+    - _Requirements: 8.2, 8.3, 8.4, 8.5_
+  - [ ] 9.6 Implement `components/admin/CandidateInspectorModal.tsx`
+    - Fetches `GET /api/requests/{id}/candidates_preview/` on open
+    - Table: rank, name, role, distance, suitability score, active jobs, proficiency, avg rating
+    - _Requirements: 8.5, 16.5_
+
+- [ ] 10. Frontend: Admin portal — Employee, Service, User management
+  - [ ] 10.1 Implement `app/(admin)/employees/page.tsx` — Employee list
+    - Fetch `apiEmployees.list()`
+    - Table with: name, role, status badge, availability indicator, workload bar (`active / max_active * 100%`), skills chips
+    - "Add Employee" button → `app/(admin)/employees/new/page.tsx`
+    - Row click → detail page
+    - _Requirements: 9.1, 9.5, 16.6_
+  - [ ] 10.2 Implement `app/(admin)/employees/new/page.tsx` and `app/(admin)/employees/[id]/page.tsx`
+    - New: creates User account first (`POST /api/users/` with role=EMPLOYEE) then creates Employee profile (`POST /api/employees/`)
+    - Detail/Edit: profile form (name, experience, max assignments, location coords), status control, availability toggle
+    - Skills editor: list of domain→proficiency rows; add/remove via `POST /api/employees/skills/`
+    - Schedule editor: 7-day grid; add/remove time slots via `POST /api/employees/schedules/`
+    - _Requirements: 9.1, 9.2, 9.3, 9.4, 16.6_
+  - [ ] 10.3 Implement `app/(admin)/services/page.tsx` — Service domain management
+    - Fetch `apiServices.listDomains()`
+    - Table: domain name, SLA hours, active status, issue count, actions (edit, toggle active, delete)
+    - "Add Domain" button opens inline form or slide-over
+    - Per-domain: expand to show predefined issues sub-table with inline add/edit/delete
+    - _Requirements: 11.1, 11.3, 16.7_
+  - [ ] 10.4 Implement `app/(admin)/users/page.tsx` — User management
+    - Fetch `apiUsers.list()`
+    - Table with role badge, active status, created date
+    - Actions: activate/deactivate, reset password (modal), delete
+    - "Add User" → `app/(admin)/users/new/page.tsx` with role selector (USER, EMPLOYEE, ADMIN)
+    - _Requirements: 10.1, 10.2, 10.3, 10.4, 10.5, 16.8_
+
+- [ ] 11. Frontend checkpoint
+  - Ensure `npm run build` in `frontend/` passes with no TypeScript errors and no build warnings treated as errors
+  - Verify all three portals render correctly when visited in a browser against the live backend
+  - Confirm role-switcher, database/schema footer, and ML details are absent from all pages
+  - Ask the user if questions arise before proceeding.
+  - _Requirements: 13.8, 17.13_
+
+- [ ] 12. Final backend test checkpoint
+  - Run `python manage.py test --noinput` and confirm all tests pass (≥ 47 original + new tests)
+  - Run `python manage.py check --database default`
+  - Run `python manage.py makemigrations --check`
+  - _Requirements: 17.1, 17.11, 17.12_
+
+---
+
+## Notes
+
+- Tasks marked `*` are optional. Skip them for a faster MVP — they catch logic errors early but are not required for the application to function.
+- Each task references specific requirements for traceability.
+- The backend hardening tasks (1–3) and the frontend foundation (5–6) are independent and can be executed in parallel by different developers.
+- The three portal implementations (Tasks 7, 8, 9–10) are also independent after the foundation (Tasks 5–6) is complete.
+- Property tests (marked in `*` tasks) validate universal correctness guarantees defined in the design document.
+- The `KerasRankingModel` must remain injectable but must **not** be set as the default. The `DeterministicWeightedRanker` stays as default throughout Phase 3.
