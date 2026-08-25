@@ -1,369 +1,245 @@
 'use client';
+import React, { useState, useEffect, useCallback } from 'react';
+import { apiRequests, apiEmployees } from '@/lib/api';
+import { ServiceRequest, Employee } from '@/lib/types';
+import { getPriorityColors, getStatusColors } from '@/lib/colors';
+import { Sidebar } from './ui/Sidebar';
+import { KPICard } from './ui/KPICard';
+import { EmptyState } from './ui/EmptyState';
+import { SkeletonCard, SkeletonTable } from './ui/SkeletonLoader';
+import { LayoutDashboard, ClipboardList, History, User, MapPin, Phone, AlertTriangle, Clock, Star, CheckCircle, Play } from 'lucide-react';
 
-import React, { useState, useEffect } from 'react';
-import { useAuth } from '@/context/AuthContext';
-import {
-  Employee,
-  ServiceRequest,
-} from '@/lib/types';
-import {
-  apiEmployees,
-  apiRequests,
-} from '@/lib/api';
-import {
-  HardHat,
-  MapPin,
-  Clock,
-  CheckCircle2,
-  PlayCircle,
-  Phone,
-  AlertCircle,
-  Star,
-  RefreshCw,
-  Award,
-  Flame,
-  Check,
-} from 'lucide-react';
+type Section = 'dashboard' | 'tasks' | 'history' | 'profile';
 
-export const EmployeePortal: React.FC = () => {
-  const { user } = useAuth();
-  const [profile, setProfile] = useState<Employee | null>(null);
-  const [tasks, setTasks] = useState<ServiceRequest[]>([]);
-  const [loading, setLoading] = useState<boolean>(true);
-  const [updatingTaskId, setUpdatingTaskId] = useState<string | null>(null);
-
-  const loadEmployeeData = async () => {
-    setLoading(true);
-    try {
-      const [empProfile, allReqs] = await Promise.all([
-        apiEmployees.getMe().catch(() => null),
-        apiRequests.list(),
-      ]);
-      setProfile(empProfile);
-      setTasks(allReqs);
-    } catch (err) {
-      console.error('Failed to load employee profile/tasks', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    loadEmployeeData();
-  }, [user]);
-
-  const handleStartWork = async (requestId: string) => {
-    setUpdatingTaskId(requestId);
-    try {
-      await apiRequests.startWork(requestId);
-      loadEmployeeData();
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setUpdatingTaskId(null);
-    }
-  };
-
-  const handleCompleteWork = async (requestId: string) => {
-    setUpdatingTaskId(requestId);
-    try {
-      await apiRequests.completeWork(requestId);
-      loadEmployeeData();
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setUpdatingTaskId(null);
-    }
-  };
-
-  const handleToggleAvailability = async () => {
-    if (!profile) return;
-    try {
-      await apiEmployees.toggleAvailability(profile.id, !profile.is_available);
-      setProfile((prev) => (prev ? { ...prev, is_available: !prev.is_available } : null));
-    } catch (e) {
-      console.error(e);
-    }
-  };
-
-  const activeTasks = tasks.filter(
-    (t) => t.status === 'ASSIGNED' || t.status === 'IN_PROGRESS' || t.status === 'REOPENED'
-  );
-  const completedTasks = tasks.filter((t) => t.status === 'COMPLETED');
-
+// ─── Assignment Card ───────────────────────────────────────────────────────────
+const EmpAssignmentCard: React.FC<{ request: ServiceRequest; onAction: (id: string, action: 'start' | 'complete') => void; loading: boolean }> = ({ request, onAction, loading }) => {
+  const pc = getPriorityColors(request.priority);
+  const isUrgent = request.priority === 'URGENT' || request.priority === 'CRITICAL';
+  const title = request.predefined_issue_details?.title || request.custom_description?.substring(0, 60) || 'Service Request';
   return (
-    <div className="container py-4 px-3 px-lg-4">
-      {/* Header & Personal Scorecard */}
-      <div className="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
-        <div>
-          <h4 className="fw-bold text-dark mb-1 d-flex align-items-center gap-2">
-            <span>Workforce Mobile Field Console</span>
-            <span className="badge bg-warning text-dark border border-warning-subtle fs-6">
-              Field Technician
-            </span>
-          </h4>
-          <p className="text-muted small mb-0">
-            Assigned tasks ordered by proximity, priority, and domain SLAs
-          </p>
-        </div>
-
-        <div className="d-flex align-items-center gap-3">
-          {profile && (
-            <div className="d-flex align-items-center gap-2 bg-white px-3 py-2 rounded-3 shadow-sm border">
-              <span className="small fw-semibold text-muted">Duty Availability:</span>
-              <div className="form-check form-switch mb-0">
-                <input
-                  className="form-check-input"
-                  type="checkbox"
-                  role="switch"
-                  checked={profile.is_available}
-                  onChange={handleToggleAvailability}
-                />
-              </div>
-              <span
-                className={`badge ${
-                  profile.is_available ? 'bg-success' : 'bg-secondary'
-                }`}
-              >
-                {profile.is_available ? 'Online' : 'Off Duty'}
-              </span>
-            </div>
-          )}
-
-          <button
-            onClick={loadEmployeeData}
-            disabled={loading}
-            className="btn btn-outline-secondary btn-sm d-flex align-items-center gap-1 rounded-3"
-          >
-            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-            <span>Sync Tasks</span>
-          </button>
-        </div>
+    <div className="request-card mb-3" style={isUrgent ? { borderLeft: '3px solid var(--color-danger)' } : {}}>
+      <div className="d-flex align-items-center gap-2 mb-2 flex-wrap">
+        {isUrgent && <AlertTriangle size={14} className="text-danger" />}
+        <span className="badge rounded-pill" style={{ backgroundColor: pc.bg, color: pc.text, fontSize: '0.7rem' }}>{request.priority_display || request.priority}</span>
+        <span className="text-muted small ms-auto">{request.domain_details?.name}</span>
       </div>
-
-      {/* Technician Scorecard */}
-      {profile && (
-        <div className="row g-3 mb-4">
-          <div className="col-6 col-md-3">
-            <div className="card border-0 shadow-sm rounded-3 p-3 bg-white">
-              <small className="text-muted d-block">Active Workload</small>
-              <div className="fs-4 fw-bold text-primary">
-                {profile.active_assignments_count} / {profile.max_active_assignments}
-              </div>
-              <small className="text-muted">Concurrent active jobs</small>
-            </div>
-          </div>
-
-          <div className="col-6 col-md-3">
-            <div className="card border-0 shadow-sm rounded-3 p-3 bg-white">
-              <small className="text-muted d-block">Customer Satisfaction</small>
-              <div className="fs-4 fw-bold text-warning">
-                ⭐ {profile.historical_avg_rating.toFixed(1)} <small className="fs-6 text-muted">/ 5.0</small>
-              </div>
-              <small className="text-muted">From verified ratings</small>
-            </div>
-          </div>
-
-          <div className="col-6 col-md-3">
-            <div className="card border-0 shadow-sm rounded-3 p-3 bg-white">
-              <small className="text-muted d-block">Total Resolved</small>
-              <div className="fs-4 fw-bold text-success">
-                {profile.historical_completed_count} Jobs
-              </div>
-              <small className="text-muted">Lifetime completed</small>
-            </div>
-          </div>
-
-          <div className="col-6 col-md-3">
-            <div className="card border-0 shadow-sm rounded-3 p-3 bg-white">
-              <small className="text-muted d-block">GPS Proximity Mode</small>
-              <div className="fs-4 fw-bold text-danger">Active</div>
-              <small className="text-muted">Haversine metric dispatch</small>
-            </div>
-          </div>
+      <p className="fw-semibold small text-dark mb-2">{title}</p>
+      {request.details_snapshot && Object.keys(request.details_snapshot).length > 0 && (
+        <div className="small text-muted mb-2">
+          {Object.entries(request.details_snapshot).filter(([, value]) => value !== '' && value !== false).slice(0, 3).map(([key, value]) => (
+            <span className="badge text-bg-light me-1" key={key}>{key.replaceAll('_', ' ')}: {String(value)}</span>
+          ))}
         </div>
       )}
+      <div className="d-flex flex-wrap gap-3 text-muted mb-3" style={{ fontSize: '0.75rem' }}>
+        {request.location_name && <span className="d-flex align-items-center gap-1"><MapPin size={11} />{request.location_name}</span>}
+        {request.user_details && <span className="d-flex align-items-center gap-1"><Phone size={11} />{request.user_details.first_name} {request.user_details.last_name}{request.user_details.phone ? ` — ${request.user_details.phone}` : ''}</span>}
+        {request.active_assignment?.distance_km && <span className="d-flex align-items-center gap-1"><MapPin size={11} />{Number(request.active_assignment.distance_km).toFixed(1)} km</span>}
+      </div>
+      <div className="d-flex gap-2">
+        {request.status === 'ASSIGNED' && (
+          <button className="btn btn-sm btn-outline-primary flex-grow-1 d-flex align-items-center justify-content-center gap-1" onClick={() => onAction(request.id, 'start')} disabled={loading}>
+            <Play size={13} /> Start Work
+          </button>
+        )}
+        {request.status === 'IN_PROGRESS' && (
+          <button className="btn btn-sm btn-success flex-grow-1 d-flex align-items-center justify-content-center gap-1" onClick={() => onAction(request.id, 'complete')} disabled={loading}>
+            <CheckCircle size={13} /> Complete Work
+          </button>
+        )}
+      </div>
+    </div>
+  );
+};
 
-      {/* Active Tasks Queue */}
-      <div className="mb-5">
-        <h5 className="fw-bold text-dark mb-3 d-flex align-items-center gap-2">
-          <span>Active Assignment Queue</span>
-          <span className="badge bg-primary rounded-pill">{activeTasks.length}</span>
-        </h5>
+// ─── Dashboard Section ─────────────────────────────────────────────────────────
+const Dashboard: React.FC = () => {
+  const [assignments, setAssignments] = useState<ServiceRequest[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-        {activeTasks.length === 0 ? (
-          <div className="card border-0 shadow-sm rounded-3 p-5 bg-white text-center">
-            <CheckCircle2 size={48} className="text-success mx-auto mb-2" />
-            <h6 className="fw-bold text-dark">Queue is All Clear!</h6>
-            <p className="text-muted small mb-0">
-              No pending service requests assigned to your queue at this moment.
-            </p>
-          </div>
-        ) : (
-          <div className="row g-3">
-            {activeTasks.map((task) => {
-              const assign = task.active_assignment;
-              const isUpdating = updatingTaskId === task.id;
+  const fetchAssignments = useCallback(async () => {
+    setLoading(true); setError(null);
+    try {
+      const data = await apiRequests.list();
+      setAssignments(data.filter((request) => request.status === 'ASSIGNED' || request.status === 'IN_PROGRESS'));
+    } catch { setError('Failed to load assignments.'); }
+    finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { fetchAssignments(); }, [fetchAssignments]);
+
+  const handleAction = async (id: string, action: 'start' | 'complete') => {
+    setActionLoading(true);
+    try {
+      if (action === 'start') await apiRequests.startWork(id);
+      else await apiRequests.completeWork(id);
+      await fetchAssignments();
+    } catch { /* ignore */ }
+    finally { setActionLoading(false); }
+  };
+
+  const urgent = assignments.filter(a => a.priority === 'URGENT' || a.priority === 'CRITICAL');
+  const normal = assignments.filter(a => a.priority !== 'URGENT' && a.priority !== 'CRITICAL');
+
+  return (
+    <div>
+      <div className="row g-3 mb-4">
+        <div className="col-6 col-md-3"><KPICard label="Active Assignments" value={assignments.length} color="var(--color-primary)" /></div>
+        <div className="col-6 col-md-3"><KPICard label="Urgent" value={urgent.length} color="var(--color-danger)" /></div>
+        <div className="col-6 col-md-3"><KPICard label="In Progress" value={assignments.filter(a => a.status === 'IN_PROGRESS').length} color="var(--color-warning)" /></div>
+        <div className="col-6 col-md-3"><KPICard label="Assigned (Pending)" value={assignments.filter(a => a.status === 'ASSIGNED').length} color="var(--color-info)" /></div>
+      </div>
+      {error && <div className="alert alert-danger small py-2">{error}</div>}
+      {loading ? (
+        <>{Array.from({length:3}).map((_,i) => <SkeletonCard key={i} />)}</>
+      ) : assignments.length === 0 ? (
+        <EmptyState icon={<ClipboardList size={48} className="text-muted" />} title="No active assignments" description="You're all caught up! New assignments will appear here." />
+      ) : (
+        <>
+          {urgent.length > 0 && (
+            <div className="mb-3">
+              <div className="d-flex align-items-center gap-2 mb-2"><AlertTriangle size={14} className="text-danger" /><span className="fw-semibold small text-danger">Urgent ({urgent.length})</span></div>
+              {urgent.map(r => <EmpAssignmentCard key={r.id} request={r} onAction={handleAction} loading={actionLoading} />)}
+            </div>
+          )}
+          {normal.length > 0 && (
+            <div>
+              {urgent.length > 0 && <div className="text-muted small fw-semibold mb-2">Normal Priority ({normal.length})</div>}
+              {normal.map(r => <EmpAssignmentCard key={r.id} request={r} onAction={handleAction} loading={actionLoading} />)}
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+};
+
+// ─── History Section ───────────────────────────────────────────────────────────
+const HistoryPage: React.FC = () => {
+  const [history, setHistory] = useState<ServiceRequest[]>([]);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    apiRequests.list({ status: 'COMPLETED' }).then(d => { setHistory(d); setLoading(false); }).catch(() => setLoading(false));
+  }, []);
+  if (loading) return <SkeletonTable rows={6} />;
+  if (history.length === 0) return <EmptyState icon={<History size={48} className="text-muted" />} title="No completed assignments" description="Your work history will appear here after completing assignments." />;
+  return (
+    <div>
+      <div className="fw-semibold mb-3 small text-muted">{history.length} completed assignments</div>
+      <div className="table-responsive">
+        <table className="table table-hover table-sm align-middle">
+          <thead className="table-light small text-muted">
+            <tr><th>Issue</th><th>Domain</th><th>Priority</th><th>Completed</th><th>Rating</th></tr>
+          </thead>
+          <tbody>
+            {history.map(r => {
+              const pc = getPriorityColors(r.priority);
+              const title = r.predefined_issue_details?.title || r.custom_description?.substring(0, 40) || 'Service Request';
+              const rating = r.feedback_details?.rating;
               return (
-                <div key={task.id} className="col-12 col-lg-6">
-                  <div
-                    className={`card border-0 shadow-sm rounded-3 p-4 bg-white h-100 position-relative ${
-                      task.status === 'IN_PROGRESS' ? 'border-start border-warning border-4' : ''
-                    }`}
-                  >
-                    {/* Top badging */}
-                    <div className="d-flex justify-content-between align-items-start mb-2">
-                      <div className="d-flex align-items-center gap-2">
-                        <span className="badge bg-dark">
-                          {task.domain_details?.name || 'Trade Job'}
-                        </span>
-                        <span
-                          className={`badge ${
-                            task.priority === 'CRITICAL' || task.priority === 'URGENT'
-                              ? 'bg-danger'
-                              : task.priority === 'HIGH'
-                              ? 'bg-warning text-dark'
-                              : 'bg-info text-dark'
-                          }`}
-                        >
-                          {task.priority_display || task.priority}
-                        </span>
-                      </div>
-
-                      {assign && (
-                        <div className="badge bg-danger-subtle text-danger border border-danger-subtle fs-6 py-1 px-2 d-flex align-items-center gap-1">
-                          <MapPin size={14} />
-                          <span>{assign.distance_km.toFixed(2)} km away</span>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Title & Description */}
-                    <h6 className="fw-bold text-dark mb-1">
-                      {task.predefined_issue_details?.title || 'Service Request'}
-                    </h6>
-                    <p className="text-secondary small mb-3">
-                      {task.custom_description || 'No additional custom details provided.'}
-                    </p>
-
-                    {/* Customer & Location */}
-                    <div className="p-3 bg-light rounded-3 mb-3 small">
-                      <div className="d-flex justify-content-between mb-1">
-                        <span className="text-muted">Location:</span>
-                        <strong className="text-dark">{task.location_name || 'Resident Unit'}</strong>
-                      </div>
-                      <div className="d-flex justify-content-between mb-1">
-                        <span className="text-muted">Resident:</span>
-                        <span className="text-dark">
-                          {task.user_details?.first_name
-                            ? `${task.user_details.first_name} ${task.user_details.last_name}`
-                            : task.user_details?.username}
-                        </span>
-                      </div>
-                      {task.user_details?.phone && (
-                        <div className="d-flex justify-content-between">
-                          <span className="text-muted">Phone:</span>
-                          <a
-                            href={`tel:${task.user_details.phone}`}
-                            className="text-primary text-decoration-none fw-semibold d-flex align-items-center gap-1"
-                          >
-                            <Phone size={12} />
-                            {task.user_details.phone}
-                          </a>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Action Workflow Buttons */}
-                    <div className="mt-auto d-flex gap-2">
-                      {task.status === 'ASSIGNED' || task.status === 'REOPENED' ? (
-                        <button
-                          onClick={() => handleStartWork(task.id)}
-                          disabled={isUpdating}
-                          className="btn btn-warning flex-fill fw-semibold d-flex align-items-center justify-content-center gap-2 rounded-3 text-dark"
-                        >
-                          <PlayCircle size={16} />
-                          <span>{isUpdating ? 'Updating...' : 'Start Work (In-Progress)'}</span>
-                        </button>
-                      ) : task.status === 'IN_PROGRESS' ? (
-                        <button
-                          onClick={() => handleCompleteWork(task.id)}
-                          disabled={isUpdating}
-                          className="btn btn-success flex-fill fw-semibold d-flex align-items-center justify-content-center gap-2 rounded-3"
-                        >
-                          <CheckCircle2 size={16} />
-                          <span>{isUpdating ? 'Saving...' : 'Mark Completed'}</span>
-                        </button>
-                      ) : null}
-                    </div>
-                  </div>
-                </div>
+                <tr key={r.id}>
+                  <td className="small fw-medium">{title}</td>
+                  <td className="small text-muted">{r.domain_details?.name}</td>
+                  <td><span className="badge rounded-pill" style={{ backgroundColor: pc.bg, color: pc.text, fontSize: '0.68rem' }}>{r.priority}</span></td>
+                  <td className="small text-muted">{r.completed_at ? new Date(r.completed_at).toLocaleDateString() : '-'}</td>
+                  <td>{rating ? <span className="d-flex align-items-center gap-1 small"><Star size={12} fill="#f59e0b" stroke="#f59e0b" />{rating}/5</span> : <span className="text-muted small">-</span>}</td>
+                </tr>
               );
             })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+
+// ─── Profile Section ───────────────────────────────────────────────────────────
+const ProfilePage: React.FC = () => {
+  const [profile, setProfile] = useState<Employee | null>(null);
+  const [loading, setLoading] = useState(true);
+  useEffect(() => {
+    apiEmployees.getMe().then(d => { setProfile(d); setLoading(false); }).catch(() => setLoading(false));
+  }, []);
+  if (loading) return <SkeletonTable rows={4} />;
+  if (!profile) return <EmptyState icon={<User size={48} className="text-muted" />} title="Profile not found" description="Your employee profile could not be loaded." />;
+  const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  return (
+    <div className="row g-3">
+      <div className="col-md-4">
+        <div className="kpi-card text-center">
+          <div className="rounded-circle d-flex align-items-center justify-content-center text-white fw-bold mx-auto mb-3" style={{ width: 64, height: 64, backgroundColor: 'var(--color-primary)', fontSize: '1.5rem' }}>
+            {profile.user_details?.first_name?.[0] || 'E'}
+          </div>
+          <div className="fw-bold">{profile.user_details?.first_name} {profile.user_details?.last_name}</div>
+          <div className="text-muted small">{profile.role_details?.title || 'Technician'}</div>
+          <span className={`badge mt-2 ${profile.is_available ? 'bg-success' : 'bg-secondary'}`}>{profile.is_available ? 'Available' : 'Unavailable'}</span>
+        </div>
+      </div>
+      <div className="col-md-8">
+        <div className="kpi-card mb-3">
+          <div className="text-muted small fw-medium mb-3">Performance Stats</div>
+          <div className="row g-2 text-center">
+            <div className="col-3"><div className="fw-bold" style={{ color: 'var(--color-primary)' }}>{profile.historical_completed_count || 0}</div><div className="text-muted" style={{ fontSize: '0.7rem' }}>Completed</div></div>
+            <div className="col-3"><div className="fw-bold" style={{ color: 'var(--color-warning)' }}>{profile.active_assignments_count || 0}</div><div className="text-muted" style={{ fontSize: '0.7rem' }}>Active</div></div>
+            <div className="col-3"><div className="fw-bold" style={{ color: 'var(--color-success)' }}>{profile.historical_avg_rating?.toFixed(1) || '—'}</div><div className="text-muted" style={{ fontSize: '0.7rem' }}>Avg Rating</div></div>
+            <div className="col-3"><div className="fw-bold" style={{ color: 'var(--color-info)' }}>{profile.experience_years}y</div><div className="text-muted" style={{ fontSize: '0.7rem' }}>Experience</div></div>
+          </div>
+        </div>
+        {profile.skills && profile.skills.length > 0 && (
+          <div className="kpi-card mb-3">
+            <div className="text-muted small fw-medium mb-2">Skills</div>
+            <div className="d-flex flex-wrap gap-2">
+              {profile.skills.map(s => (
+                <span key={s.id} className="badge rounded-pill fw-medium" style={{ backgroundColor: 'var(--color-bg)', color: 'var(--color-text-primary)', border: '1px solid var(--color-border)', fontSize: '0.72rem' }}>
+                  {s.domain_name} <span className="text-muted">Lv{s.proficiency_level}</span>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+        {profile.schedules && profile.schedules.length > 0 && (
+          <div className="kpi-card">
+            <div className="text-muted small fw-medium mb-2">Schedule</div>
+            <div className="d-flex flex-wrap gap-2">
+              {profile.schedules.filter(s => s.is_active).map(s => (
+                <span key={s.id} className="badge rounded-pill" style={{ backgroundColor: 'var(--color-bg)', color: 'var(--color-primary)', border: '1px solid var(--color-border)', fontSize: '0.7rem' }}>
+                  {DAY_NAMES[s.day_of_week]} {s.start_time?.substring(0,5)}–{s.end_time?.substring(0,5)}
+                </span>
+              ))}
+            </div>
           </div>
         )}
       </div>
+    </div>
+  );
+};
 
-      {/* Completed History */}
-      <div>
-        <h5 className="fw-bold text-dark mb-3">Recently Completed Jobs</h5>
-        <div className="card border-0 shadow-sm rounded-3 bg-white p-4">
-          <div className="table-responsive">
-            <table className="table table-hover align-middle mb-0 small">
-              <thead className="table-light">
-                <tr>
-                  <th>Job Title</th>
-                  <th>Location</th>
-                  <th>Resolved At</th>
-                  <th>Distance at Dispatch</th>
-                  <th>Customer Rating & Review</th>
-                </tr>
-              </thead>
-              <tbody>
-                {completedTasks.length === 0 ? (
-                  <tr>
-                    <td colSpan={5} className="text-center py-4 text-muted">
-                      No completed jobs recorded yet.
-                    </td>
-                  </tr>
-                ) : (
-                  completedTasks.slice(0, 10).map((req) => (
-                    <tr key={req.id}>
-                      <td className="fw-semibold text-dark">
-                        {req.predefined_issue_details?.title || req.custom_description}
-                      </td>
-                      <td>{req.location_name}</td>
-                      <td className="text-muted">
-                        {req.completed_at ? new Date(req.completed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Completed'}
-                      </td>
-                      <td>
-                        <span className="badge bg-light text-dark border">
-                          {req.active_assignment?.distance_km ? `${req.active_assignment.distance_km.toFixed(2)} km` : '—'}
-                        </span>
-                      </td>
-                      <td>
-                        {req.feedback_details ? (
-                          <div>
-                            <span className="text-warning fw-semibold">
-                              {'⭐'.repeat(req.feedback_details.rating)}
-                            </span>
-                            {req.feedback_details.comments && (
-                              <div className="text-muted text-truncate" style={{ maxWidth: 260 }}>
-                                &ldquo;{req.feedback_details.comments}&rdquo;
-                              </div>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="text-muted">Pending customer review</span>
-                        )}
-                      </td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
+// ─── Main EmployeePortal ───────────────────────────────────────────────────────
+export const EmployeePortal: React.FC = () => {
+  const [activeSection, setActiveSection] = useState<Section>('dashboard');
+  const navItems = [
+    { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={16} /> },
+    { id: 'tasks',     label: 'My Tasks',  icon: <ClipboardList size={16} /> },
+    { id: 'history',   label: 'History',   icon: <History size={16} /> },
+    { id: 'profile',   label: 'Profile',   icon: <User size={16} /> },
+  ];
+  return (
+    <div className="portal-layout">
+      <Sidebar sections={navItems} activeSection={activeSection} onSelect={id => setActiveSection(id as Section)} />
+      <div className="portal-content">
+        <h5 className="fw-bold mb-1">{navItems.find(n => n.id === activeSection)?.label}</h5>
+        <p className="text-muted small mb-4">
+          {activeSection === 'dashboard' ? 'Your active assignments and workload'
+            : activeSection === 'tasks'   ? 'Manage your current work'
+            : activeSection === 'history' ? 'Past completed assignments'
+            : 'Your skills, schedule, and performance'}
+        </p>
+        {activeSection === 'dashboard' && <Dashboard />}
+        {activeSection === 'tasks'     && <Dashboard />}
+        {activeSection === 'history'   && <HistoryPage />}
+        {activeSection === 'profile'   && <ProfilePage />}
       </div>
     </div>
   );

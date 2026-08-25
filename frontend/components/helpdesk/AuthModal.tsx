@@ -22,6 +22,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
   const [selectedOrgId, setSelectedOrgId] = useState<string>(organization?.id || '');
   const [loading, setLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [passwordConfirm, setPasswordConfirm] = useState<string>('');
 
   if (!isOpen) return null;
 
@@ -188,35 +189,39 @@ export const AuthModal: React.FC<AuthModalProps> = ({ isOpen, onClose }) => {
               </div>
 
               {isRegister && (
-                <>
-                  <div className="mb-3">
-                    <label className="form-label small fw-semibold text-muted">Organization</label>
-                    <select
-                      className="form-select form-select-sm"
-                      value={selectedOrgId}
-                      onChange={(e) => setSelectedOrgId(e.target.value)}
-                    >
-                      {allOrganizations.map((org) => (
-                        <option key={org.id} value={org.id}>
-                          {org.name}
-                        </option>
-                      ))}
-                    </select>
+                <div className="mb-3">
+                  <label className="form-label small fw-semibold text-muted">Confirm Password</label>
+                  <div className="input-group input-group-sm">
+                    <span className="input-group-text bg-white">
+                      <Lock size={14} className="text-muted" />
+                    </span>
+                    <input
+                      type="password"
+                      className="form-control"
+                      placeholder="••••••••"
+                      value={passwordConfirm}
+                      onChange={(e) => setPasswordConfirm(e.target.value)}
+                      required
+                    />
                   </div>
+                </div>
+              )}
 
-                  <div className="mb-3">
-                    <label className="form-label small fw-semibold text-muted">Role</label>
-                    <select
-                      className="form-select form-select-sm"
-                      value={role}
-                      onChange={(e) => setRole(e.target.value as any)}
-                    >
-                      <option value="USER">Resident / Customer</option>
-                      <option value="EMPLOYEE">Workforce Technician</option>
-                      <option value="ADMIN">Facility Administrator</option>
-                    </select>
-                  </div>
-                </>
+              {isRegister && (
+                <div className="mb-3">
+                  <label className="form-label small fw-semibold text-muted">Organization</label>
+                  <select
+                    className="form-select form-select-sm"
+                    value={selectedOrgId}
+                    onChange={(e) => setSelectedOrgId(e.target.value)}
+                  >
+                    {allOrganizations.map((org) => (
+                      <option key={org.id} value={org.id}>
+                        {org.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               )}
             </div>
 

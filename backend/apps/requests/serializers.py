@@ -24,6 +24,7 @@ class ServiceRequestSerializer(serializers.ModelSerializer):
             'predefined_issue',
             'predefined_issue_details',
             'custom_description',
+            'details_snapshot',
             'latitude',
             'longitude',
             'location_name',

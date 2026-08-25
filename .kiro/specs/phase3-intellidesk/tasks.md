@@ -12,19 +12,19 @@ Legend:
 
 ## Tasks
 
-- [ ] 1. Backend: Feedback endpoint wiring and validation
-  - [ ] 1.1 Verify `apps/feedback/urls.py` is registered in `config/urls.py` under `path('api/feedback/', ...)`; add if missing
+- [x] 1. Backend: Feedback endpoint wiring and validation
+  - [x] 1.1 Verify `apps/feedback/urls.py` is registered in `config/urls.py` under `path('api/feedback/', ...)`; add if missing
     - Confirm the existing `FeedbackViewSet` is fully reachable at `POST /api/feedback/`
     - _Requirements: 12.1, 12.2_
-  - [ ] 1.2 Audit `FeedbackViewSet.create()` for the full business logic
+  - [x] 1.2 Audit `FeedbackViewSet.create()` for the full business logic
     - Verify `resolution_time_minutes` is calculated as `(completed_at or now - created_at).total_seconds() / 60`
     - Verify `met_sla` is derived as `resolution_time_minutes <= domain.sla_hours * 60`
     - Verify that `is_resolved=False` triggers `AssignmentService.reassign_request` and sets `status=REOPENED`
     - Fix any gaps found; do not change method signatures or the Feedback model
     - _Requirements: 12.3, 12.4_
-  - [ ] 1.3 Verify duplicate-feedback guard (OneToOne constraint + view-level 400 response)
+  - [x] 1.3 Verify duplicate-feedback guard (OneToOne constraint + view-level 400 response)
     - _Requirements: 12.5_
-  - [ ]* 1.4 Write unit tests in `apps/feedback/tests.py`
+  - [x]* 1.4 Write unit tests in `apps/feedback/tests.py`
     - Test rating persisted, resolution time calculated correctly, `met_sla` derived from `sla_hours`
     - Test unresolved feedback triggers reassignment (mock `AssignmentService.reassign_request`)
     - Test duplicate submission returns HTTP 400
@@ -32,35 +32,35 @@ Legend:
     - **Validates: Requirements 12.3, 12.4, 12.5**
     - _Requirements: 17.9_
 
-- [ ] 2. Backend: Analytics service completion
-  - [ ] 2.1 Extract `_employee_stats(emp)` helper from `AnalyticsService.get_charts_data` to eliminate duplication
+- [x] 2. Backend: Analytics service completion
+  - [x] 2.1 Extract `_employee_stats(emp)` helper from `AnalyticsService.get_charts_data` to eliminate duplication
     - Refactor the employee loop in `get_charts_data` to use `prefetch_related('assignments__request__feedback')` on the queryset before iteration; remove per-employee N+1 queries
     - _Requirements: Req 10 (DB optimization)_
-  - [ ] 2.2 Implement `AnalyticsService.get_employee_scorecard(emp)` using the extracted helper
+  - [x] 2.2 Implement `AnalyticsService.get_employee_scorecard(emp)` using the extracted helper
     - Returns the same structure as the per-employee dict in `workforce_performance`
     - _Requirements: 6.5_
-  - [ ] 2.3 Complete `EmployeeScorecardView.get()` in `apps/analytics/views.py`
+  - [x] 2.3 Complete `EmployeeScorecardView.get()` in `apps/analytics/views.py`
     - For `pk=None`, look up the employee via `request.user.employee_profile`
     - Apply org-scoped `get_object_or_404` so cross-tenant access returns 404
     - Return scorecard dict from step 2.2
     - _Requirements: 6.5, 2.1_
-  - [ ] 2.4 Verify `AnalyticsOverviewView` and `AnalyticsChartsView` are org-scoped correctly for non-superusers (they are; confirm and add a comment)
+  - [x] 2.4 Verify `AnalyticsOverviewView` and `AnalyticsChartsView` are org-scoped correctly for non-superusers (they are; confirm and add a comment)
     - _Requirements: 7.1, 7.2, 7.3_
 
-- [ ] 3. Backend: Permission and organization isolation hardening
-  - [ ] 3.1 Add a `test_org_isolation` test class in `apps/requests/tests_phase3.py`
+- [x] 3. Backend: Permission and organization isolation hardening
+  - [x] 3.1 Add a `test_org_isolation` test class in `apps/requests/tests_phase3.py`
     - Create two organizations, two users in different orgs, confirm User A cannot GET/PATCH/DELETE User B's ServiceRequest
     - **Property 2 & 3: Organization isolation** — list endpoint returns zero cross-tenant records; detail endpoint returns 403/404
     - **Validates: Requirements 2.1, 2.2**
     - _Requirements: 17.4_
-  - [ ] 3.2 Add authentication tests in `apps/accounts/tests_phase3.py`
+  - [x] 3.2 Add authentication tests in `apps/accounts/tests_phase3.py`
     - Test valid login returns access token, refresh token, and user profile with correct role
     - Test invalid credentials return 400 (not 500)
     - Test inactive user account returns 400
     - **Property 1: Self-registration privilege escalation is impossible** — POST /auth/register/ with role=ADMIN returns 403; role=EMPLOYEE returns 403
     - **Validates: Requirements 1.1, 1.2, 1.6**
     - _Requirements: 17.2, 17.3_
-  - [ ] 3.3 Add ServiceRequest lifecycle tests in `apps/requests/tests_phase3.py`
+  - [x] 3.3 Add ServiceRequest lifecycle tests in `apps/requests/tests_phase3.py`
     - Test CREATED → ASSIGNED (via auto-assign) when eligible employees exist
     - Test CREATED → QUEUED when no eligible employees exist
     - Test ASSIGNED → IN_PROGRESS via `start_work`
@@ -70,7 +70,7 @@ Legend:
     - **Property 4: Auto-assignment fires on every new valid request**
     - **Validates: Requirements 3.5, 3.6, 3.7, 17.5, 17.6**
     - _Requirements: 17.5, 17.6_
-  - [ ] 3.4 Add AssignmentEngine eligibility tests in `apps/ml_engine/tests_phase3.py`
+  - [x] 3.4 Add AssignmentEngine eligibility tests in `apps/ml_engine/tests_phase3.py`
     - Test unavailable employee excluded from candidates
     - Test wrong-org employee excluded
     - Test at-capacity employee excluded
@@ -79,13 +79,13 @@ Legend:
     - **Property 5: CandidateSelector hard-filter invariant**
     - **Validates: Requirements 5.3, 17.7, 17.8**
     - _Requirements: 17.7, 17.8_
-  - [ ] 3.5 Add ServiceDomain CRUD permission tests in `apps/services/tests.py`
+  - [x] 3.5 Add ServiceDomain CRUD permission tests in `apps/services/tests.py`
     - Test admin can create/update/delete domain in own org
     - Test employee and resident receive 403 on create/update/delete
     - **Validates: Requirements 11.1, 17.10**
     - _Requirements: 17.10_
 
-- [ ] 4. Backend: Checkpoint
+- [x] 4. Backend: Checkpoint
   - Ensure all tests pass: `python manage.py test --noinput`
   - Run `python manage.py check --database default`
   - Run `python manage.py makemigrations --check`

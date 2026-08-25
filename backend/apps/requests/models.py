@@ -45,6 +45,7 @@ class ServiceRequest(models.Model):
         related_name='service_requests'
     )
     custom_description = models.TextField(blank=True, default='')
+    details_snapshot = models.JSONField(default=dict, blank=True)
     latitude = models.DecimalField(max_digits=10, decimal_places=7, default=0.0)
     longitude = models.DecimalField(max_digits=10, decimal_places=7, default=0.0)
     location_name = models.CharField(max_length=255, blank=True, default='')

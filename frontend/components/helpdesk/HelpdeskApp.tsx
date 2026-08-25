@@ -6,6 +6,7 @@ import { Navbar } from './Navbar';
 import { AdminPortal } from './AdminPortal';
 import { EmployeePortal } from './EmployeePortal';
 import { ResidentPortal } from './ResidentPortal';
+import { SuperAdminPortal } from './SuperAdminPortal';
 import { CandidateInspectorModal } from './CandidateInspectorModal';
 import { FeedbackModal } from './FeedbackModal';
 import { AuthModal } from './AuthModal';
@@ -42,7 +43,9 @@ export const HelpdeskApp: React.FC = () => {
 
       {/* Main Portal Content based on Role */}
       <main className="flex-grow-1">
-        {role === 'ADMIN' ? (
+        {user?.is_superuser ? (
+          <SuperAdminPortal />
+        ) : role === 'ADMIN' ? (
           <AdminPortal onInspectRequest={(reqId) => setInspectingRequestId(reqId)} />
         ) : role === 'EMPLOYEE' ? (
           <EmployeePortal />
@@ -55,14 +58,14 @@ export const HelpdeskApp: React.FC = () => {
       <footer className="bg-white border-top py-3 mt-auto text-center small text-muted">
         <div className="container d-flex flex-wrap justify-content-between align-items-center gap-2">
           <div>
-            <strong>IntelliDesk</strong> &copy; {new Date().getFullYear()} Intelligent Helpdesk & Automated Workforce Assignment Platform
+            <strong>IntelliDesk</strong> &copy; {new Date().getFullYear()} &mdash; Intelligent Helpdesk &amp; Automated Workforce Assignment
           </div>
           <div className="d-flex gap-3">
-            <span>Normalized PostgreSQL Schema</span>
+            <span>Privacy Policy</span>
             <span>&bull;</span>
-            <span>Haversine GPS Engine</span>
+            <span>Terms of Service</span>
             <span>&bull;</span>
-            <span>ML Ranking Interface</span>
+            <span>Support</span>
           </div>
         </div>
       </footer>

@@ -65,6 +65,10 @@ export const apiServices = {
     const res = await apiClient.get('/services/domains/');
     return Array.isArray(res.data) ? res.data : res.data.results || [];
   },
+  listIssues: async (domain: string): Promise<PredefinedIssue[]> => {
+    const res = await apiClient.get('/services/issues/', { params: { domain } });
+    return Array.isArray(res.data) ? res.data : res.data.results || [];
+  },
   createDomain: async (payload: Partial<ServiceDomain>): Promise<ServiceDomain> => {
     const res = await apiClient.post('/services/domains/', payload);
     return res.data;
@@ -168,6 +172,10 @@ export const apiAnalytics = {
   },
   getCharts: async (days: number = 14): Promise<ChartsData> => {
     const res = await apiClient.get('/analytics/charts/', { params: { days } });
+    return res.data;
+  },
+  getPlatform: async (): Promise<any> => {
+    const res = await apiClient.get('/analytics/platform/');
     return res.data;
   },
 };

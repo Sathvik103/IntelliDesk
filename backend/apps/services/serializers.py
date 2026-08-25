@@ -41,7 +41,7 @@ class ServiceDomainSerializer(serializers.ModelSerializer):
             'created_at',
             'updated_at',
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at']
+        read_only_fields = ['id', 'organization', 'created_at', 'updated_at']
 
     def get_employee_count(self, obj):
         return obj.employee_skills.filter(employee__status='ACTIVE').count()

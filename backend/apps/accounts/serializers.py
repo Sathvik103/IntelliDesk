@@ -23,9 +23,11 @@ class UserSerializer(serializers.ModelSerializer):
             'phone',
             'address',
             'is_active',
+            'is_superuser',
+            'is_staff',
             'created_at',
         ]
-        read_only_fields = ['id', 'created_at']
+        read_only_fields = ['id', 'created_at', 'is_superuser', 'is_staff']
 
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=True, min_length=6)

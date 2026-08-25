@@ -9,6 +9,35 @@ from apps.assignments.models import Assignment
 
 class AnalyticsService:
     @staticmethod
+    def get_platform_kpis():
+        from apps.organizations.models import Organization
+        from apps.accounts.models import User
+
+        total_orgs = Organization.objects.count()
+        active_orgs = Organization.objects.filter(is_active=True).count()
+        total_users = User.objects.filter(is_superuser=False).count()
+        total_employees = Employee.objects.count()
+        total_requests = ServiceRequest.objects.count()
+        completed_requests = ServiceRequest.objects.filter(status='COMPLETED').count()
+        completion_rate = round((completed_requests / total_requests * 100), 1) if total_requests > 0 else 0.0
+
+        avg_resolution = Feedback.objects.aggregate(avg=Avg('resolution_time_minutes'))['avg'] or 0.0
+        avg_satisfaction = Feedback.objects.aggregate(avg=Avg('rating'))['avg'] or 0.0
+
+        return {
+            'total_organizations': total_orgs,
+            'active_organizations': active_orgs,
+            'total_users': total_users,
+            'total_employees': total_employees,
+            'total_requests': total_requests,
+            'completed_requests': completed_requests,
+            'completion_rate': completion_rate,
+            'avg_resolution_time_mins': round(avg_resolution, 1),
+            'overall_satisfaction': round(avg_satisfaction, 2),
+        }
+
+
+    @staticmethod
     def get_overview_kpis(organization=None, date_from=None, date_to=None):
         req_qs = ServiceRequest.objects.all()
         fb_qs = Feedback.objects.all()
@@ -93,6 +122,79 @@ class AnalyticsService:
 
 
     @staticmethod
+    def _employee_stats(emp, fb_by_emp, active_by_emp, completed_by_emp, total_by_emp):
+        """Helper to extract employee statistics from aggregation results."""
+        eid = str(emp.id)
+        fb_data = fb_by_emp.get(eid, {})
+        active_c = active_by_emp.get(eid, 0)
+        completed_c = completed_by_emp.get(eid, 0)
+        total_assigned = total_by_emp.get(eid, 0)
+
+        total_fb = fb_data.get('total_fb', 0)
+        met_sla_count = fb_data.get('met_sla_count', 0)
+
+        completion_rate = round((completed_c / total_assigned * 100), 1) if total_assigned > 0 else 0.0
+        sla_rate = round((met_sla_count / total_fb * 100), 1) if total_fb > 0 else 100.0
+
+        return {
+            'id': eid,
+            'name': emp.user.get_full_name() or emp.user.username,
+            'email': emp.user.email,
+            'role': emp.role.title if emp.role else 'Technician',
+            'status': emp.status,
+            'is_available': emp.is_available,
+            'current_active': active_c,
+            'max_capacity': emp.max_active_assignments,
+            'workload_pct': round((active_c / max(1, emp.max_active_assignments)) * 100, 1),
+            'completed_total': completed_c,
+            'completion_rate': completion_rate,
+            'avg_rating': round(fb_data.get('avg_rating') or 5.0, 2),
+            'avg_resolution_mins': round(fb_data.get('avg_resolution') or 0.0, 1),
+            'sla_compliance_pct': sla_rate,
+            'skills': [s.domain.name for s in emp.skills.all()],
+        }
+
+    @staticmethod
+    def get_employee_scorecard(emp):
+        """
+        Returns the scorecard for a specific employee using the extracted helper.
+        Returns the same structure as per-employee dict in workforce_performance.
+        """
+        from django.db.models import Avg as DjAvg, Count as DjCount2, Q
+        from apps.feedback.models import Feedback as FB
+
+        # Aggregate feedback for this employee
+        emp_feedback = FB.objects.filter(employee=emp).aggregate(
+            avg_rating=DjAvg('rating'),
+            avg_resolution=DjAvg('resolution_time_minutes'),
+            total_fb=DjCount2('id'),
+            met_sla_count=DjCount2('id', filter=Q(met_sla=True)),
+        )
+        fb_by_emp = {str(emp.id): emp_feedback}
+
+        # Aggregate active assignments
+        active_assign = Assignment.objects.filter(
+            employee=emp,
+            status__in=['ASSIGNED', 'ACCEPTED', 'IN_PROGRESS']
+        ).count()
+        active_by_emp = {str(emp.id): active_assign}
+
+        # Aggregate completed assignments
+        completed_assign = Assignment.objects.filter(
+            employee=emp,
+            status='COMPLETED'
+        ).count()
+        completed_by_emp = {str(emp.id): completed_assign}
+
+        # Total assignments
+        total_assign = Assignment.objects.filter(employee=emp).count()
+        total_by_emp = {str(emp.id): total_assign}
+
+        return AnalyticsService._employee_stats(
+            emp, fb_by_emp, active_by_emp, completed_by_emp, total_by_emp
+        )
+
+    @staticmethod
     def get_charts_data(organization=None, days: int = 14):
         req_qs = ServiceRequest.objects.all()
         fb_qs = Feedback.objects.all()
@@ -157,44 +259,48 @@ class AnalyticsService:
             for s in range(1, 6)
         ]
 
-        # 6. Employee Workload & Performance Table
+        # 6. Employee Workload & Performance Table — aggregated, no N+1
         employees_summary = []
-        for emp in emp_qs.select_related('user', 'role').prefetch_related('skills__domain'):
-            emp_assignments = emp.assignments.all()
-            completed_c = emp_assignments.filter(status='COMPLETED').count()
-            active_c = emp_assignments.filter(status__in=['ASSIGNED', 'ACCEPTED', 'IN_PROGRESS']).count()
-            
-            emp_feedbacks = [a.request.feedback for a in emp_assignments if hasattr(a.request, 'feedback')]
-            if emp_feedbacks:
-                emp_avg_rating = round(sum(f.rating for f in emp_feedbacks) / len(emp_feedbacks), 2)
-                emp_sla_rate = round(sum(1 for f in emp_feedbacks if f.met_sla) / len(emp_feedbacks) * 100, 1)
-                res_times = [f.resolution_time_minutes for f in emp_feedbacks if f.resolution_time_minutes > 0]
-                emp_avg_time = round(sum(res_times) / len(res_times), 1) if res_times else 0.0
-            else:
-                emp_avg_rating = 5.0
-                emp_sla_rate = 100.0
-                emp_avg_time = 0.0
+        emp_list = emp_qs.select_related('user', 'role').prefetch_related(
+            'skills__domain',
+            'assignments__request__feedback'
+        )
+        # Use annotation for feedback averages instead of Python loop
+        from django.db.models import Avg as DjAvg, Count as DjCount2
+        from apps.feedback.models import Feedback as FB
 
-            total_assigned = emp_assignments.count()
-            completion_rate = round((completed_c / total_assigned * 100), 1) if total_assigned > 0 else 0.0
+        emp_feedback_agg = FB.objects.filter(
+            employee__in=emp_qs
+        ).values('employee_id').annotate(
+            avg_rating=DjAvg('rating'),
+            avg_resolution=DjAvg('resolution_time_minutes'),
+            total_fb=DjCount2('id'),
+            met_sla_count=DjCount2('id', filter=Q(met_sla=True)),
+        )
+        fb_by_emp = {str(row['employee_id']): row for row in emp_feedback_agg}
 
-            employees_summary.append({
-                'id': str(emp.id),
-                'name': emp.user.get_full_name() or emp.user.username,
-                'email': emp.user.email,
-                'role': emp.role.title if emp.role else 'Technician',
-                'status': emp.status,
-                'is_available': emp.is_available,
-                'current_active': active_c,
-                'max_capacity': emp.max_active_assignments,
-                'workload_pct': round((active_c / max(1, emp.max_active_assignments)) * 100, 1),
-                'completed_total': completed_c,
-                'completion_rate': completion_rate,
-                'avg_rating': emp_avg_rating,
-                'avg_resolution_mins': emp_avg_time,
-                'sla_compliance_pct': emp_sla_rate,
-                'skills': [s.domain.name for s in emp.skills.all()],
-            })
+        active_assign_agg = Assignment.objects.filter(
+            employee__in=emp_qs,
+            status__in=['ASSIGNED', 'ACCEPTED', 'IN_PROGRESS']
+        ).values('employee_id').annotate(active=DjCount2('id'))
+        active_by_emp = {str(row['employee_id']): row['active'] for row in active_assign_agg}
+
+        completed_assign_agg = Assignment.objects.filter(
+            employee__in=emp_qs,
+            status='COMPLETED'
+        ).values('employee_id').annotate(completed=DjCount2('id'))
+        completed_by_emp = {str(row['employee_id']): row['completed'] for row in completed_assign_agg}
+
+        total_assign_agg = Assignment.objects.filter(
+            employee__in=emp_qs
+        ).values('employee_id').annotate(total=DjCount2('id'))
+        total_by_emp = {str(row['employee_id']): row['total'] for row in total_assign_agg}
+
+        for emp in emp_list:
+            stats_dict = AnalyticsService._employee_stats(
+                emp, fb_by_emp, active_by_emp, completed_by_emp, total_by_emp
+            )
+            employees_summary.append(stats_dict)
 
         return {
             'by_domain': by_domain,

@@ -54,6 +54,8 @@ export interface UserProfile {
   phone?: string;
   address?: string;
   is_active: boolean;
+  is_superuser?: boolean;
+  is_staff?: boolean;
   created_at: string;
 }
 
@@ -169,6 +171,7 @@ export interface ServiceRequest {
   predefined_issue?: string;
   predefined_issue_details?: PredefinedIssue;
   custom_description: string;
+  details_snapshot?: Record<string, unknown>;
   latitude: number;
   longitude: number;
   location_name: string;
