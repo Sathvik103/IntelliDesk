@@ -23,6 +23,7 @@ class IsResidentUser(permissions.BasePermission):
             request.user.is_authenticated
         )
 
+# Superusers see everything; everyone else only objects from their own organization.
 class IsSameOrganization(permissions.BasePermission):
     def has_object_permission(self, request, view, obj):
         if request.user.is_superuser:
